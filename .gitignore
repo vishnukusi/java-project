@@ -1,0 +1,47 @@
+# macOS
+.DS_Store
+
+# Java / Maven
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# SentinelCV runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.key
+
+# Local tooling
+.tools/
+
+# Generated reports and logs
+*.log
+*.tmp
+*.bak
+
+# Generated archives
+*.zip
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+
+# Frontend dependencies
+**/node_modules/
+
+# Frontend build output
+frontend/dist/
+frontend-sentinelcv/dist/
