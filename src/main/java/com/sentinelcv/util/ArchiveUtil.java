@@ -18,14 +18,17 @@ import java.nio.channels.OverlappingFileLockException;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SecureDirectoryStream;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,6 +41,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 
 /**
  * Utility for safely extracting ZIP archives.
@@ -447,76 +451,199 @@ public final class ArchiveUtil {
             SecureDirectoryStream<Path> target =
                     (SecureDirectoryStream<Path>) targetStream;
 
-            List<Path> names = new ArrayList<>();
+            commitDirectoryWithSecureStream(
+                    source,
+                    stagingDir,
+                    target,
+                    canonicalTarget,
+                    true,
+                    existingBefore,
+                    createdInTargetDirs,
+                    createdInTargetFiles
+            );
+        }
+    }
 
-            for (Path entry : source) {
-                Path name = entry.getFileName();
+    private static void commitDirectoryWithSecureStream(
+            SecureDirectoryStream<Path> srcStream,
+            Path srcDirPath,
+            SecureDirectoryStream<Path> dstStream,
+            Path dstDirPath,
+            boolean isRoot,
+            Set<Path> existingBefore,
+            List<Path> createdInTargetDirs,
+            List<Path> createdInTargetFiles
+    ) throws IOException {
+        List<Path> dirNames = new ArrayList<>();
+        List<Path> fileNames = new ArrayList<>();
 
-                if (name == null
-                        || name.toString().isBlank()
-                        || name.getNameCount() != 1) {
-                    throw new SentinelCvException(
-                            "SECURITY_VIOLATION",
-                            "Invalid staged entry encountered."
-                    );
-                }
-
-                BasicFileAttributes attrs = Files.readAttributes(
-                        entry,
-                        BasicFileAttributes.class,
-                        LinkOption.NOFOLLOW_LINKS
+        for (Path entry : srcStream) {
+            Path name = entry.getFileName();
+            if (name == null
+                    || name.toString().isBlank()
+                    || name.getNameCount() != 1) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "Invalid staged entry encountered."
                 );
-
-                if (attrs.isSymbolicLink()
-                        || (!attrs.isDirectory() && !attrs.isRegularFile())) {
-                    throw new SentinelCvException(
-                            "SECURITY_VIOLATION",
-                            "Staging contains an invalid filesystem object: " + name
-                    );
-                }
-
-                names.add(name);
             }
 
-            names.sort(Comparator.comparing(Path::toString));
+            BasicFileAttributes srcAttrs = readAttributesNoFollow(srcStream, name);
+            if (srcAttrs == null
+                    || srcAttrs.isSymbolicLink()
+                    || (!srcAttrs.isDirectory() && !srcAttrs.isRegularFile())) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "Staging contains an invalid filesystem object: " + name
+                );
+            }
 
-            List<Path> moved = new ArrayList<>();
+            if (srcAttrs.isDirectory()) {
+                dirNames.add(name);
+            } else {
+                fileNames.add(name);
+            }
+        }
+
+        dirNames.sort(Comparator.comparing(Path::toString));
+        fileNames.sort(Comparator.comparing(Path::toString));
+
+        BiConsumer<String, Path> interceptor = COMMIT_INTERCEPTOR;
+        if (isRoot && !fileNames.isEmpty() && interceptor != null) {
+            interceptor.accept("before_file_creation", dstDirPath);
+            if (Files.isSymbolicLink(dstDirPath)) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "Destination directory replaced with symbolic link during commit: " + dstDirPath
+                );
+            }
+        }
+
+        for (Path fileName : fileNames) {
+            Path dstFilePath = dstDirPath.resolve(fileName);
+            BasicFileAttributes existingFile = readAttributesNoFollow(dstStream, fileName);
+            if (existingFile != null) {
+                if (existingFile.isSymbolicLink()) {
+                    throw new SentinelCvException(
+                            "SECURITY_VIOLATION",
+                            "Destination path component is a symbolic link: " + dstFilePath
+                    );
+                }
+                throw new SentinelCvException(
+                        "DESTINATION_COLLISION",
+                        "Archive extraction rejected: destination file already exists: " + dstFilePath
+                );
+            }
 
             try {
-                for (Path name : names) {
-                    source.move(name, target, name);
-                    moved.add(name);
-                }
-            } catch (IOException | RuntimeException failure) {
+                srcStream.move(fileName, dstStream, fileName);
+                createdInTargetFiles.add(dstFilePath);
+            } catch (FileAlreadyExistsException collision) {
+                throw new SentinelCvException(
+                        "DESTINATION_COLLISION",
+                        "An archive destination entry already exists: " + dstFilePath
+                );
+            }
+        }
 
-                for (int i = moved.size() - 1; i >= 0; i--) {
-                    Path name = moved.get(i);
+        for (Path dirName : dirNames) {
+            Path srcChildPath = srcDirPath.resolve(dirName);
+            Path dstChildPath = dstDirPath.resolve(dirName);
 
-                    try {
-                        target.move(name, source, name);
-                    } catch (IOException rollbackFailure) {
-                        failure.addSuppressed(rollbackFailure);
-                        logger.error(
-                                "Failed to roll back staged archive entry {}: {}",
-                                name,
-                                rollbackFailure.getMessage()
-                        );
-                    }
-                }
-
-                if (failure instanceof FileAlreadyExistsException) {
+            BasicFileAttributes existingDir = readAttributesNoFollow(dstStream, dirName);
+            if (existingDir != null) {
+                if (existingDir.isSymbolicLink()) {
                     throw new SentinelCvException(
-                            "DESTINATION_COLLISION",
-                            "An archive destination entry already exists."
+                            "SECURITY_VIOLATION",
+                            "Destination path component is a symbolic link: " + dstChildPath
                     );
                 }
-
-                if (failure instanceof IOException ioe) {
-                    throw ioe;
+                if (!existingDir.isDirectory()) {
+                    throw new SentinelCvException(
+                            "DESTINATION_COLLISION",
+                            "Archive extraction rejected: destination entry already exists as non-directory: " + dstChildPath
+                    );
                 }
-
-                throw (RuntimeException) failure;
+            } else {
+                Files.createDirectory(dstChildPath);
+                if (!existingBefore.contains(dstChildPath)) {
+                    createdInTargetDirs.add(dstChildPath);
+                }
             }
+
+            if (interceptor != null) {
+                interceptor.accept("before_file_creation", dstChildPath);
+            }
+
+            BasicFileAttributes verifiedDir = readAttributesNoFollow(dstStream, dirName);
+            if (verifiedDir == null) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "Destination directory disappeared during commit (TOCTOU): " + dstChildPath
+                );
+            }
+            if (verifiedDir.isSymbolicLink() || !verifiedDir.isDirectory()) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "TOCTOU symlink or non-directory swap detected during commit: " + dstChildPath
+                );
+            }
+
+            try (SecureDirectoryStream<Path> childSrc =
+                         srcStream.newDirectoryStream(dirName, LinkOption.NOFOLLOW_LINKS);
+                 SecureDirectoryStream<Path> childDst =
+                         openDirectoryNoFollow(dstStream, dirName, dstChildPath)) {
+                commitDirectoryWithSecureStream(
+                        childSrc,
+                        srcChildPath,
+                        childDst,
+                        dstChildPath,
+                        false,
+                        existingBefore,
+                        createdInTargetDirs,
+                        createdInTargetFiles
+                );
+            }
+        }
+    }
+
+    private static BasicFileAttributes readAttributesNoFollow(
+            SecureDirectoryStream<Path> dirStream,
+            Path entryName
+    ) throws IOException {
+        try {
+            return dirStream
+                    .getFileAttributeView(entryName, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+                    .readAttributes();
+        } catch (NoSuchFileException ignored) {
+            return null;
+        }
+    }
+
+    private static SecureDirectoryStream<Path> openDirectoryNoFollow(
+            SecureDirectoryStream<Path> parent,
+            Path entryName,
+            Path fullPath
+    ) throws IOException {
+        try {
+            return parent.newDirectoryStream(entryName, LinkOption.NOFOLLOW_LINKS);
+        } catch (FileSystemException ex) {
+            BasicFileAttributes attrs = readAttributesNoFollow(parent, entryName);
+            if (attrs != null && (attrs.isSymbolicLink() || !attrs.isDirectory())) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "TOCTOU symlink or non-directory swap detected during commit: " + fullPath
+                );
+            }
+            if (ex.getReason() != null
+                    && (ex.getReason().contains("symbolic link")
+                        || ex.getReason().contains("Not a directory"))) {
+                throw new SentinelCvException(
+                        "SECURITY_VIOLATION",
+                        "TOCTOU symlink traversal blocked during commit: " + fullPath
+                );
+            }
+            throw ex;
         }
     }
 
@@ -524,14 +651,19 @@ public final class ArchiveUtil {
         // Delete all files created in this extraction
         for (Path f : createdFiles) {
             try {
-                Files.deleteIfExists(f);
+                if (!Files.isSymbolicLink(f)) {
+                    Files.deleteIfExists(f);
+                }
             } catch (IOException ignored) {}
         }
         // Delete created directories in reverse order (deepest first), only if empty and not in existingBefore
         Collections.reverse(createdDirs);
         for (Path d : createdDirs) {
             try {
-                if (Files.exists(d, LinkOption.NOFOLLOW_LINKS) && !existingBefore.contains(d) && !d.equals(targetRoot)) {
+                if (Files.exists(d, LinkOption.NOFOLLOW_LINKS)
+                        && !Files.isSymbolicLink(d)
+                        && !existingBefore.contains(d)
+                        && !d.equals(targetRoot)) {
                     try (var s = Files.list(d)) {
                         if (s.findAny().isEmpty()) {
                             Files.deleteIfExists(d);
@@ -541,7 +673,9 @@ public final class ArchiveUtil {
             } catch (IOException ignored) {}
         }
         // If targetRoot was created in this run and is now empty, delete it
-        if (!existingBefore.contains(targetRoot) && Files.exists(targetRoot, LinkOption.NOFOLLOW_LINKS)) {
+        if (!existingBefore.contains(targetRoot)
+                && Files.exists(targetRoot, LinkOption.NOFOLLOW_LINKS)
+                && !Files.isSymbolicLink(targetRoot)) {
             try (var s = Files.list(targetRoot)) {
                 if (s.findAny().isEmpty()) {
                     Files.deleteIfExists(targetRoot);

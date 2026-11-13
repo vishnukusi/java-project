@@ -24,6 +24,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -53,6 +55,9 @@ public class ModelAuditService {
     private final AuditHistoryRepository auditHistoryRepository;
     private final RiskAssessmentService riskAssessmentService;
     private final ObjectMapper objectMapper;
+
+    @Autowired(required = false)
+    private PlatformTransactionManager transactionManager;
 
     @Autowired
     public ModelAuditService(List<ModelLoader> modelLoaders,
@@ -104,39 +109,42 @@ public class ModelAuditService {
         }
 
         ModelAudit audit = auditOpt.get();
-        Optional<MlModel> modelOpt = modelRepository.findById(audit.getModelId());
-        if (modelOpt.isEmpty()) {
-            audit.setStatus(AuditStatus.FAILED);
-            audit.setErrorMessage("Associated ML model not found: " + audit.getModelId());
-            return auditRepository.save(audit);
-        }
-
-        MlModel mlModel = modelOpt.get();
-        File modelFile = new File(mlModel.getPath());
-        if (!modelFile.exists() || !modelFile.isFile()) {
-            audit.setStatus(AuditStatus.FAILED);
-            audit.setErrorMessage("Model file does not exist on disk: " + mlModel.getPath());
-            if (riskAssessmentService != null) {
-                riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(), String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.FAILED, "Model file does not exist on disk");
-                riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(), String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.FAILED, "Model file does not exist on disk");
-            }
-            return auditRepository.save(audit);
-        }
-
-        audit.setStatus(AuditStatus.RUNNING);
-        audit.setStartedAt(LocalDateTime.now());
-        auditRepository.save(audit);
-        if (riskAssessmentService != null) {
-            riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(), String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.NOT_EXECUTED, "Audit in progress");
-            riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(), String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.NOT_EXECUTED, "Audit in progress");
-        }
+        MlModel mlModel = null;
 
         try {
+            Optional<MlModel> modelOpt = modelRepository.findById(audit.getModelId());
+            if (modelOpt.isEmpty()) {
+                return markAuditFailedSafely(audit, null, "Associated ML model not found: " + audit.getModelId(), null);
+            }
+
+            mlModel = modelOpt.get();
+            File modelFile = new File(mlModel.getPath());
+            if (!modelFile.exists() || !modelFile.isFile()) {
+                return markAuditFailedSafely(
+                        audit,
+                        String.valueOf(mlModel.getId()),
+                        "Model file does not exist on disk: " + mlModel.getPath(),
+                        mlModel.getSha256Hash()
+                );
+            }
+
+            audit.setStatus(AuditStatus.RUNNING);
+            audit.setStartedAt(LocalDateTime.now());
+            audit.setCompletedAt(null);
+            audit.setErrorMessage(null);
+            audit.setAssessmentDecision(null);
+            auditRepository.save(audit);
+            if (riskAssessmentService != null) {
+                riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(), String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.NOT_EXECUTED, "Audit in progress");
+                riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(), String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.NOT_EXECUTED, "Audit in progress");
+            }
+
             // 1. Select appropriate ModelLoader
+            final var modelFormat = mlModel.getFormat();
             ModelLoader loader = modelLoaders.stream()
                     .filter(l -> l.canLoad(modelFile))
                     .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("No loader available for model format: " + mlModel.getFormat()));
+                    .orElseThrow(() -> new IllegalArgumentException("No loader available for model format: " + modelFormat));
 
             List<SecurityFinding> allFindings = new ArrayList<>();
 
@@ -152,7 +160,6 @@ public class ModelAuditService {
 
             mlModel.setSha256Hash(fpResult.sha256);
             mlModel.setFileSizeBytes(fpResult.fileSizeBytes);
-            modelRepository.save(mlModel);
 
             audit.setBehavioralFingerprint(fpResult.structuralFingerprint);
 
@@ -169,9 +176,6 @@ public class ModelAuditService {
             // 6. Tally Findings
             int crit = 0, high = 0, med = 0, low = 0, info = 0;
             for (SecurityFinding f : allFindings) {
-                modelFindingRepository.save(f, mlModel.getId());
-                securityFindingRepository.save(f);
-
                 switch (f.getSeverity()) {
                     case CRITICAL -> crit++;
                     case HIGH -> high++;
@@ -194,75 +198,91 @@ public class ModelAuditService {
                 decision = AssessmentDecision.ACCEPT;
             }
 
-            audit.setCriticalFindings(crit);
-            audit.setHighFindings(high);
-            audit.setMediumFindings(med);
-            audit.setLowFindings(low);
-            audit.setInfoFindings(info);
-            audit.setTotalFindings(allFindings.size());
-            audit.setAssessmentDecision(decision);
-            audit.setStatus(AuditStatus.COMPLETED);
-            audit.setCompletedAt(LocalDateTime.now());
-            audit.setSummary(String.format("Audited %s model (%d bytes). Deterministic: %b. Perturbation tests: %d. Findings: %d. Decision: %s.",
-                    metadata.format, fpResult.fileSizeBytes, behavioralResult.deterministic, triggerReport.tests.size(), allFindings.size(), decision));
+            final MlModel persistedModel = mlModel;
+            final int finalCrit = crit;
+            final int finalHigh = high;
+            final int finalMed = med;
+            final int finalLow = low;
+            final int finalInfo = info;
 
-            // Record explicit structured check execution statuses
-            if (riskAssessmentService != null) {
-                CheckExecutionStatus baselineStatus;
-                if (!metadata.inferenceSupported) {
-                    baselineStatus = CheckExecutionStatus.UNAVAILABLE;
-                } else if (!behavioralResult.inferenceExecuted || !behavioralResult.deterministic) {
-                    baselineStatus = CheckExecutionStatus.FAILED;
-                } else {
-                    baselineStatus = CheckExecutionStatus.PASSED;
+            // Persist model metadata, findings, check statuses, and COMPLETED transition atomically
+            runInTransaction(() -> {
+                modelRepository.save(persistedModel);
+
+                for (SecurityFinding f : allFindings) {
+                    modelFindingRepository.save(f, persistedModel.getId());
+                    securityFindingRepository.save(f);
                 }
-                riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(),
-                        String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), baselineStatus,
-                        "Behavioral baseline: " + baselineStatus);
 
-                CheckExecutionStatus triggerStatus;
-                if (!metadata.inferenceSupported || !behavioralResult.inferenceExecuted) {
-                    triggerStatus = CheckExecutionStatus.UNAVAILABLE;
-                } else if (!triggerReport.executed || triggerReport.unusualSensitivityDetected) {
-                    triggerStatus = CheckExecutionStatus.FAILED;
-                } else {
-                    triggerStatus = CheckExecutionStatus.PASSED;
+                audit.setCriticalFindings(finalCrit);
+                audit.setHighFindings(finalHigh);
+                audit.setMediumFindings(finalMed);
+                audit.setLowFindings(finalLow);
+                audit.setInfoFindings(finalInfo);
+                audit.setTotalFindings(allFindings.size());
+                audit.setAssessmentDecision(decision);
+                audit.setErrorMessage(null);
+                audit.setStatus(AuditStatus.COMPLETED);
+                audit.setCompletedAt(LocalDateTime.now());
+                audit.setSummary(String.format("Audited %s model (%d bytes). Deterministic: %b. Perturbation tests: %d. Findings: %d. Decision: %s.",
+                        metadata.format, fpResult.fileSizeBytes, behavioralResult.deterministic, triggerReport.tests.size(), allFindings.size(), decision));
+
+                if (riskAssessmentService != null) {
+                    CheckExecutionStatus baselineStatus;
+                    if (!metadata.inferenceSupported) {
+                        baselineStatus = CheckExecutionStatus.UNAVAILABLE;
+                    } else if (!behavioralResult.inferenceExecuted || !behavioralResult.deterministic) {
+                        baselineStatus = CheckExecutionStatus.FAILED;
+                    } else {
+                        baselineStatus = CheckExecutionStatus.PASSED;
+                    }
+                    riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(),
+                            String.valueOf(persistedModel.getId()), persistedModel.getSha256Hash(), baselineStatus,
+                            "Behavioral baseline: " + baselineStatus);
+
+                    CheckExecutionStatus triggerStatus;
+                    if (!metadata.inferenceSupported || !behavioralResult.inferenceExecuted) {
+                        triggerStatus = CheckExecutionStatus.UNAVAILABLE;
+                    } else if (!triggerReport.executed || triggerReport.unusualSensitivityDetected) {
+                        triggerStatus = CheckExecutionStatus.FAILED;
+                    } else {
+                        triggerStatus = CheckExecutionStatus.PASSED;
+                    }
+                    riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(),
+                            String.valueOf(persistedModel.getId()), persistedModel.getSha256Hash(), triggerStatus,
+                            "Trigger perturbation: " + triggerStatus);
                 }
-                riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(),
-                        String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), triggerStatus,
-                        "Trigger perturbation: " + triggerStatus);
-            }
 
-            auditRepository.save(audit);
+                auditRepository.save(audit);
 
-            // Record in Audit History
-            AuditHistory history = new AuditHistory();
-            history.setAuditType("MODEL");
-            history.setTargetName(mlModel.getName());
-            history.setTargetId(mlModel.getId());
-            history.setStatus("COMPLETED");
-            history.setFindingsCount(allFindings.size());
-            history.setAssessmentDecision(decision.name());
-            history.setStartedAt(audit.getStartedAt());
-            history.setCompletedAt(audit.getCompletedAt());
-            history.setSummary(audit.getSummary());
-            auditHistoryRepository.save(history);
+                AuditHistory history = new AuditHistory();
+                history.setAuditType("MODEL");
+                history.setTargetName(persistedModel.getName());
+                history.setTargetId(persistedModel.getId());
+                history.setStatus("COMPLETED");
+                history.setFindingsCount(allFindings.size());
+                history.setAssessmentDecision(decision.name());
+                history.setStartedAt(audit.getStartedAt());
+                history.setCompletedAt(audit.getCompletedAt());
+                history.setSummary(audit.getSummary());
+                auditHistoryRepository.save(history);
+            });
 
             logger.info("Model audit completed for: {}. Decision: {}", mlModel.getName(), decision);
             return audit;
 
-        } catch (Exception e) {
-            logger.error("Model audit failed for: {}", mlModel.getName(), e);
-            if (riskAssessmentService != null) {
-                riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(),
-                        String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.FAILED, e.getMessage());
-                riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(),
-                        String.valueOf(mlModel.getId()), mlModel.getSha256Hash(), CheckExecutionStatus.FAILED, e.getMessage());
+        } catch (Throwable t) {
+            String assetLabel = mlModel != null ? mlModel.getName() : "auditId=" + auditId;
+            logger.error("Model audit failed for: {}", assetLabel, t);
+            String modelIdStr = mlModel != null && mlModel.getId() != null
+                    ? String.valueOf(mlModel.getId())
+                    : (audit.getModelId() != null ? String.valueOf(audit.getModelId()) : null);
+            String sha = mlModel != null ? mlModel.getSha256Hash() : null;
+            markAuditFailedSafely(audit, modelIdStr, extractErrorMessage(t), sha);
+            if (t instanceof Error err) {
+                throw err;
             }
-            audit.setStatus(AuditStatus.FAILED);
-            audit.setCompletedAt(LocalDateTime.now());
-            audit.setErrorMessage(e.getMessage());
-            return auditRepository.save(audit);
+            return audit;
         }
     }
 
@@ -271,9 +291,65 @@ public class ModelAuditService {
         try {
             ModelAudit result = executeAudit(auditId);
             return CompletableFuture.completedFuture(result);
-        } catch (Exception e) {
-            logger.error("Async model audit execution failed for audit ID {}", auditId, e);
-            return CompletableFuture.failedFuture(e);
+        } catch (Throwable t) {
+            logger.error("Async model audit execution failed for audit ID {}", auditId, t);
+            ensureTerminalFailureState(auditId, extractErrorMessage(t));
+            return CompletableFuture.failedFuture(t);
         }
+    }
+
+    private void runInTransaction(Runnable work) {
+        if (transactionManager != null) {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> work.run());
+        } else {
+            work.run();
+        }
+    }
+
+    private ModelAudit markAuditFailedSafely(ModelAudit audit, String modelIdStr, String message, String modelHash) {
+        audit.setStatus(AuditStatus.FAILED);
+        audit.setCompletedAt(LocalDateTime.now());
+        audit.setAssessmentDecision(null);
+        audit.setErrorMessage(message);
+        if (riskAssessmentService != null && modelIdStr != null) {
+            try {
+                riskAssessmentService.recordCheckStatus("model.baseline_inference", audit.getId(),
+                        modelIdStr, modelHash, CheckExecutionStatus.FAILED, message);
+                riskAssessmentService.recordCheckStatus("model.trigger_perturbation", audit.getId(),
+                        modelIdStr, modelHash, CheckExecutionStatus.FAILED, message);
+            } catch (Exception ex) {
+                logger.warn("Could not record failed check statuses for model audit {}: {}", audit.getId(), ex.getMessage());
+            }
+        }
+        try {
+            return auditRepository.save(audit);
+        } catch (Exception ex) {
+            logger.error("Failed to persist FAILED status for model audit {}: {}", audit.getId(), ex.getMessage());
+            return audit;
+        }
+    }
+
+    private void ensureTerminalFailureState(Long auditId, String message) {
+        try {
+            auditRepository.findById(auditId).ifPresent(existing -> {
+                if (existing.getStatus() == AuditStatus.PENDING || existing.getStatus() == AuditStatus.RUNNING) {
+                    existing.setStatus(AuditStatus.FAILED);
+                    existing.setCompletedAt(LocalDateTime.now());
+                    existing.setAssessmentDecision(null);
+                    existing.setErrorMessage(message);
+                    auditRepository.save(existing);
+                }
+            });
+        } catch (Exception ex) {
+            logger.error("Could not mark orphaned model audit {} as FAILED: {}", auditId, ex.getMessage());
+        }
+    }
+
+    private static String extractErrorMessage(Throwable t) {
+        if (t == null) {
+            return "Unknown model audit execution error";
+        }
+        String msg = t.getMessage();
+        return (msg != null && !msg.isBlank()) ? msg : t.getClass().getSimpleName();
     }
 }

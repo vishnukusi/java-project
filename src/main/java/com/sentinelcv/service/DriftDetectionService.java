@@ -200,10 +200,10 @@ public class DriftDetectionService {
     }
 
     private DatasetParser findParser(Dataset dataset, File dir) {
-        return parsers.stream()
-                .filter(p -> p.getFormat() == dataset.getFormat() || p.canParse(dir))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No parser for " + dataset.getName()));
+        DatasetParser parser = DatasetParser.resolveAuthoritativeParser(parsers, dataset);
+        logger.info("Executing drift dataset parse (datasetId={}, name='{}', persistedFormat={}) using parser: {}",
+                dataset.getId(), dataset.getName(), dataset.getFormat(), parser.getClass().getSimpleName());
+        return parser;
     }
 
     private java.util.Map<String, Integer> countClassOccurrences(DatasetModels.ParseResult parseResult) {

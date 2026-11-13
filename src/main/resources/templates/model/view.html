@@ -1,12 +1,31 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Model Details</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Model Details · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('overview')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1 th:text="${model != null ? model.name : 'Model Details'}">Model Details</h1>
+      <p th:text="${model != null ? 'Format: ' + model.format + ' · Hash: ' + model.sha256Hash : ''}">Model metadata</p>
+    </header>
+    <div class="card">
+      <div th:if="${error}" class="banner err" role="alert" th:text="${error}"></div>
+      <div th:if="${success}" class="banner okb" role="status" th:text="${success}"></div>
+      <div class="stat"><div class="l">Audit records</div><div class="v" th:text="${#lists.size(audits)}">0</div></div>
+      <p style="margin-top:16px"><a th:href="@{/scan}">Start another scan</a> or return to <a th:href="@{/dashboard}">Overview</a>.</p>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-{
-  "model": /*[[${model}]]*/ {},
-  "audits": /*[[${audits}]]*/ []
-}
+{ "model": /*[[${model}]]*/ {}, "audits": /*[[${audits}]]*/ [], "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>

@@ -1,9 +1,50 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Models</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Models · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('overview')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1>Models</h1>
+      <p>Registered computer-vision models.</p>
+    </header>
+    <div class="card">
+      <p th:if="${#lists.isEmpty(models)}" class="empty">No models registered yet. <a th:href="@{/scan}">Start a scan</a> to upload a model.</p>
+      <div th:unless="${#lists.isEmpty(models)}" class="tw">
+        <table class="tbl stack">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Format</th>
+              <th>Size</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="m : ${models}">
+              <td data-l="ID" th:text="${m.id}">1</td>
+              <td data-l="Name"><a th:href="@{'/models/' + ${m.id}}" th:text="${m.name}">Model</a></td>
+              <td data-l="Format" th:text="${m.format}">ONNX</td>
+              <td data-l="Size" class="num" th:text="${m.fileSizeBytes != null ? m.fileSizeBytes + ' B' : '—'}">0 B</td>
+              <td data-l="Created" th:text="${#temporals.format(m.createdAt, 'dd MMM yyyy HH:mm')}">Date</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-/*[[${models}]]*/ []
+{ "models": /*[[${models}]]*/ [], "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>

@@ -1,0 +1,18 @@
+:root{
+  --bg-canvas:#F5F7FA; --bg-surface:#FFFFFF; --bg-subtle:#EBEFF5; --bg-ink:#0F1B2D;
+  --border:#D9E0EA;          /* decorative dividers only */
+  --border-input:#7B8799;    /* identifies controls: 3.6:1 on white, 3.4:1 on canvas */
+  --text:#0F1B2D; --text-2:#3F4D63; --text-muted:#566378;
+  --on-ink:#FFFFFF; --on-ink-2:#B8C4D8;
+  --accent:#1D4ED8; --accent-hover:#1E40AF; --on-accent:#FFFFFF;
+  --focus:#1D4ED8; --focus-on-ink:#9DC0FF;
+  --ok:#0B6B45;   --ok-bg:#E3F5EC;   --ok-mark:#12875A;
+  --warn:#7A4A00; --warn-bg:#FDF1D6; --warn-mark:#B7791F;
+  --crit:#B42318; --crit-bg:#FDE9E7; --crit-mark:#D92D20;
+  --na:#44516A;   --na-bg:#EBEFF5;
+  --font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,Menlo,monospace;
+  --s-1:.25rem;--s-2:.5rem;--s-3:.75rem;--s-4:1rem;--s-6:1.5rem;--s-8:2rem;--s-12:3rem;--s-16:4rem;--s-24:6rem;
+  --r-sm:4px;--r-md:8px;
+}
+

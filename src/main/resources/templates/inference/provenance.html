@@ -1,12 +1,54 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Inference Provenance</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inference Provenance · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('overview')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1>Inference Provenance</h1>
+      <p>Cryptographic hash chaining, signature verification, and replay detection.</p>
+    </header>
+    <div class="card">
+      <div th:if="${error}" class="banner err" role="alert" th:text="${error}"></div>
+      <div th:if="${success}" class="banner okb" role="status" th:text="${success}"></div>
+      <p th:if="${#lists.isEmpty(records)}" class="empty">No inference records imported yet. <a th:href="@{/scan}">Start a scan</a> to import records.</p>
+      <div th:unless="${#lists.isEmpty(records)}" class="tw">
+        <table class="tbl stack">
+          <thead>
+            <tr>
+              <th>Record ID</th>
+              <th>Seq #</th>
+              <th>Model</th>
+              <th>Status</th>
+              <th>Nonce</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="r : ${records}">
+              <td data-l="Record ID" th:text="${r.recordId}">REC-001</td>
+              <td data-l="Seq #" class="num" th:text="${r.sequenceNumber}">1</td>
+              <td data-l="Model" th:text="${r.modelIdentifier}">YOLOv8</td>
+              <td data-l="Status" th:text="${verifications[r.recordId] != null ? verifications[r.recordId].overallStatus : 'UNVERIFIED'}">VERIFIED</td>
+              <td data-l="Nonce" th:text="${r.nonce}">nonce</td>
+              <td data-l="Timestamp" th:text="${r.timestamp}">2026-11-11</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-{
-  "records": /*[[${records}]]*/ [],
-  "verifications": /*[[${verifications}]]*/ {}
-}
+{ "records": /*[[${records}]]*/ [], "verifications": /*[[${verifications}]]*/ {}, "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>

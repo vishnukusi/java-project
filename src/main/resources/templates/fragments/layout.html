@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"><body>
+<aside class="side" th:fragment="nav(active)">
+  <a class="brand" th:href="@{/}" href="/"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5l8-3z" stroke="#1D4ED8" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke="#1D4ED8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>SentinelCV</a>
+  <nav aria-label="Main">
+    <a th:href="@{/dashboard}" href="/dashboard" th:classappend="${active=='overview'} ? 'active'" th:attr="aria-current=${active=='overview'} ? 'page'">Overview</a>
+    <a th:href="@{/scan}" href="/scan" th:classappend="${active=='scan'} ? 'active'" th:attr="aria-current=${active=='scan'} ? 'page'">New Scan</a>
+    <a th:href="@{/history}" href="/history" th:classappend="${active=='history'} ? 'active'" th:attr="aria-current=${active=='history'} ? 'page'">Scan History</a>
+    <a th:href="@{/reports}" href="/reports" th:classappend="${active=='reports'} ? 'active'" th:attr="aria-current=${active=='reports'} ? 'page'">Reports</a>
+  </nav>
+</aside>
+</body></html>
+

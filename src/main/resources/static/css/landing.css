@@ -1,0 +1,45 @@
+.top{background:var(--bg-surface);border-bottom:1px solid var(--border)}
+.top .container{display:flex;align-items:center;justify-content:space-between;min-height:68px;gap:var(--s-6)}
+.brand{display:flex;align-items:center;gap:var(--s-3);font-weight:600;font-size:1.125rem;color:var(--text);text-decoration:none}
+.top nav{display:flex;gap:var(--s-6)}.top nav a{color:var(--text-2);text-decoration:none;font-size:.9375rem}
+.top nav a:hover{color:var(--accent)}
+.hero{padding:var(--s-24) 0 var(--s-16);background:
+ linear-gradient(var(--border) 1px,transparent 1px) 0 0/48px 48px,
+ linear-gradient(90deg,var(--border) 1px,transparent 1px) 0 0/48px 48px,var(--bg-canvas);
+ background-blend-mode:normal;position:relative}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(245,247,250,.55),var(--bg-canvas) 92%);pointer-events:none}
+.hero .container{position:relative;z-index:1;display:grid;grid-template-columns:1.1fr .9fr;gap:var(--s-12);align-items:center}
+.hero h1{font-size:clamp(2.25rem,5vw,3.5rem);max-width:15ch}
+.lead{font-size:1.1875rem;color:var(--text-2);max-width:52ch;margin-top:var(--s-6)}
+.actions{display:flex;flex-wrap:wrap;gap:var(--s-3);margin-top:var(--s-8)}
+.verdicts{background:var(--bg-surface);border:1px solid var(--border-input);border-radius:var(--r-md);padding:var(--s-6);animation:rise .6s ease-out both}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.verdicts h2{font-size:1rem;color:var(--text-2);font-weight:600;margin-bottom:var(--s-4)}
+.verdicts dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:var(--s-3) var(--s-4);align-items:start}
+.verdicts dd{margin:0;color:var(--text-2);font-size:.9375rem}
+.verdicts hr{border:0;border-top:1px solid var(--border);margin:var(--s-4) 0}
+.verdicts .note{font-size:.875rem;color:var(--text-muted);margin-top:var(--s-4)}
+section{padding:var(--s-16) 0}.band{background:var(--bg-surface);border-block:1px solid var(--border)}
+h2.t{font-size:clamp(1.5rem,3vw,2.125rem);max-width:24ch}
+.sub{color:var(--text-2);max-width:62ch;margin-top:var(--s-3)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-12);margin-top:var(--s-8)}
+.two h3{font-size:1.125rem;margin-bottom:var(--s-3)}.two p{color:var(--text-2);max-width:60ch}
+.rows{margin-top:var(--s-8);border-top:1px solid var(--border-input)}
+.row{display:grid;grid-template-columns:260px 1fr;gap:var(--s-8);padding:var(--s-6) 0;border-bottom:1px solid var(--border)}
+.row h3{font-size:1.125rem}.row small{display:block;margin-top:var(--s-1);color:var(--text-muted);font-size:.875rem;font-weight:400}
+.row p{color:var(--text-2);max-width:64ch}
+.steps{list-style:none;margin:var(--s-8) 0 0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s-6);counter-reset:s}
+.steps li{counter-increment:s;border-top:3px solid var(--accent);padding-top:var(--s-4)}
+.steps li::before{content:counter(s);display:block;font-weight:600;color:var(--accent);margin-bottom:var(--s-2)}
+.steps h3{font-size:1.0625rem;margin-bottom:var(--s-2)}.steps p{color:var(--text-2);font-size:.9375rem}
+.can li,.cannot li{margin-bottom:var(--s-3);color:var(--text-2)}
+.can,.cannot{margin:var(--s-4) 0 0;padding-left:var(--s-6)}
+.col{padding:var(--s-6);background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);border-top:4px solid var(--ok-mark)}
+.col.no{border-top-color:var(--warn-mark)}.col h3{font-size:1.125rem}
+.cta{background:var(--bg-ink);color:var(--on-ink);text-align:center}
+.cta h2{font-size:clamp(1.5rem,3vw,2.125rem);margin:0 auto;max-width:22ch}
+.cta p{color:var(--on-ink-2);margin:var(--s-4) auto 0;max-width:56ch}.cta .actions{justify-content:center}
+footer{padding:var(--s-8) 0;color:var(--text-muted);font-size:.875rem}
+@media(max-width:900px){.hero .container,.two{grid-template-columns:1fr}.steps{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr;gap:var(--s-2)}.top nav{display:none}}
+@media(max-width:600px){.hero{padding-top:var(--s-12)}.steps{grid-template-columns:1fr}.actions .btn{width:100%}}
+

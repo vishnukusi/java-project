@@ -186,7 +186,9 @@ public class CocoParser implements DatasetParser {
         try (Stream<Path> stream = Files.walk(dir.toPath(), 3)) {
             return stream
                     .filter(Files::isRegularFile)
+                    .filter(p -> !p.getFileName().toString().startsWith("._"))
                     .filter(p -> p.toString().toLowerCase().endsWith(".json"))
+                    .sorted()
                     .map(Path::toFile)
                     .filter(this::looksLikeCocoJson)
                     .findFirst();

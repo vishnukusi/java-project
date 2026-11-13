@@ -6,14 +6,18 @@ import com.sentinelcv.entity.DatasetAudit;
 import com.sentinelcv.entity.SecurityFinding;
 import com.sentinelcv.enums.AuditStatus;
 import com.sentinelcv.enums.DatasetFormat;
+import com.sentinelcv.exception.SentinelCvException;
 import com.sentinelcv.repository.DatasetAuditRepository;
 import com.sentinelcv.repository.DatasetFindingRepository;
 import com.sentinelcv.repository.DatasetRepository;
 import com.sentinelcv.service.DatasetAuditService;
 import com.sentinelcv.util.ArchiveUtil;
 import com.sentinelcv.util.HashUtil;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -33,6 +37,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -84,7 +89,7 @@ public class DatasetController {
 
     @PostMapping("/upload")
     public String uploadDataset(@RequestParam("name") String name,
-                                @RequestParam("format") String formatStr,
+                                @RequestParam(value = "format", required = false) String formatStr,
                                 @RequestParam("archive") MultipartFile file,
                                 RedirectAttributes redirectAttributes) {
         if (file.isEmpty()) {
@@ -93,7 +98,7 @@ public class DatasetController {
         }
 
         String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || !originalFilename.toLowerCase().endsWith(".zip")) {
+        if (originalFilename == null || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".zip")) {
             redirectAttributes.addFlashAttribute("error", "Invalid file extension: only .zip archives are permitted.");
             return "redirect:/datasets";
         }
@@ -102,7 +107,7 @@ public class DatasetController {
         Path targetDir = null;
 
         try {
-            DatasetFormat format = DatasetFormat.valueOf(formatStr.toUpperCase());
+            DatasetFormat format = parseAuthoritativeFormat(formatStr);
             String sanitizedName = name.replaceAll("[^a-zA-Z0-9_-]", "_");
 
             // Save uploaded zip file temporarily
@@ -122,6 +127,7 @@ public class DatasetController {
 
             // Extract into datasets directory safely
             targetDir = Paths.get(applicationConfig.getDatasetsDir()).toAbsolutePath().normalize().resolve(sanitizedName + "_" + System.currentTimeMillis());
+            Files.createDirectories(targetDir);
             ArchiveUtil.extractZipSafely(tempZip.toFile(), targetDir);
 
             // Compute deterministic directory content hash of extracted dataset (fail closed if hashing fails)
@@ -215,11 +221,15 @@ public class DatasetController {
     @GetMapping("/{id}/audits/{auditId}")
     public String viewAuditDetails(@PathVariable("id") Long id,
                                    @PathVariable("auditId") Long auditId,
-                                   Model model) {
+                                   Model model,
+                                   HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate");
+        response.setHeader(HttpHeaders.PRAGMA, "no-cache");
+
         Optional<Dataset> datasetOpt = datasetRepository.findById(id);
         Optional<DatasetAudit> auditOpt = datasetAuditRepository.findById(auditId);
 
-        if (datasetOpt.isEmpty() || auditOpt.isEmpty()) {
+        if (datasetOpt.isEmpty() || auditOpt.isEmpty() || !id.equals(auditOpt.get().getDatasetId())) {
             return "redirect:/datasets";
         }
 
@@ -236,7 +246,7 @@ public class DatasetController {
     public ResponseEntity<Map<String, Object>> getAuditStatus(@PathVariable("id") Long id,
                                                               @PathVariable("auditId") Long auditId) {
         Optional<DatasetAudit> auditOpt = datasetAuditRepository.findById(auditId);
-        if (auditOpt.isEmpty()) {
+        if (auditOpt.isEmpty() || !id.equals(auditOpt.get().getDatasetId())) {
             return ResponseEntity.notFound().build();
         }
         DatasetAudit audit = auditOpt.get();
@@ -247,7 +257,14 @@ public class DatasetController {
         resp.put("summary", audit.getSummary());
         resp.put("criticalFindings", audit.getCriticalFindings());
         resp.put("totalFindings", audit.getTotalFindings());
-        return ResponseEntity.ok(resp);
+        resp.put("integrityScore", audit.getStatus() == AuditStatus.COMPLETED ? audit.getIntegrityScore() : null);
+        resp.put("errorMessage", audit.getErrorMessage());
+        resp.put("startedAt", audit.getStartedAt());
+        resp.put("completedAt", audit.getCompletedAt());
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore().mustRevalidate())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(resp);
     }
 
     @PostMapping("/{id}/delete")
@@ -258,5 +275,23 @@ public class DatasetController {
         }
         redirectAttributes.addFlashAttribute("success", "Dataset deleted successfully.");
         return "redirect:/datasets";
+    }
+
+    private static DatasetFormat parseAuthoritativeFormat(String formatStr) {
+        if (formatStr == null || formatStr.trim().isEmpty()) {
+            throw new SentinelCvException(
+                    "INVALID_FORMAT",
+                    "Dataset format is required. Supported formats: COCO, YOLO."
+            );
+        }
+        String normalized = formatStr.trim().toUpperCase(Locale.ROOT);
+        try {
+            return DatasetFormat.valueOf(normalized);
+        } catch (IllegalArgumentException e) {
+            throw new SentinelCvException(
+                    "INVALID_FORMAT",
+                    "Unsupported dataset format '" + formatStr.trim() + "'. Supported formats: COCO, YOLO."
+            );
+        }
     }
 }

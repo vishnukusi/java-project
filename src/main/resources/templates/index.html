@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SentinelCV: security and integrity checks for computer-vision AI</title>
+<meta name="description" content="SentinelCV is an offline platform that inspects computer-vision datasets, models and inference records for tampering, duplicates and drift.">
+<link rel="icon" type="image/svg+xml" th:href="@{/static/favicon.svg}" href="/static/favicon.svg">
+<link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+<link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+<link rel="stylesheet" th:href="@{/static/css/landing.css}" href="/static/css/landing.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="container">
+  <a class="brand" href="#top" aria-label="SentinelCV home">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5l8-3z" stroke="#1D4ED8" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke="#1D4ED8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>SentinelCV</a>
+  <nav aria-label="Page sections"><a href="#capabilities">What it checks</a><a href="#workflow">How it works</a><a href="#limits">Limits</a><a href="#offline">Offline</a></nav>
+  <a class="btn btn-primary" th:href="@{/dashboard}" href="/dashboard">Launch SentinelCV</a>
+</div></header>
+<main id="main">
+<div class="hero" id="top"><div class="container">
+  <div>
+    <h1>Check your vision AI before you trust it.</h1>
+    <p class="lead">SentinelCV inspects computer-vision datasets, models and inference records for tampering, duplicates and drift, and gives you an evidence-based report. It runs entirely on your own machine.</p>
+    <div class="actions"><a class="btn btn-primary" th:href="@{/dashboard}" href="/dashboard">Launch SentinelCV</a><a class="btn btn-secondary" href="#workflow">See how it works</a></div>
+  </div>
+  <aside class="verdicts" aria-labelledby="v-h">
+    <h2 id="v-h">Every scan ends with a clear disposition</h2>
+    <dl>
+      <dt><span class="badge b-ok"><i aria-hidden="true">✓</i>ACCEPT</span></dt><dd>The checks that ran found no blocking issues.</dd>
+      <dt><span class="badge b-warn"><i aria-hidden="true">!</i>REVIEW</span></dt><dd>A person should look before this is used.</dd>
+      <dt><span class="badge b-crit"><i aria-hidden="true">✕</i>QUARANTINE</span></dt><dd>Do not use without a thorough investigation.</dd>
+    </dl>
+    <hr>
+    <dl>
+      <dt><span class="badge b-na"><i aria-hidden="true">⊘</i>UNAVAILABLE</span></dt><dd>The check could not be performed.</dd>
+      <dt><span class="badge b-na"><i aria-hidden="true">○</i>NOT RUN</span></dt><dd>The check was never executed.</dd>
+    </dl>
+    <p class="note">Checks that could not run are reported as such. They are never counted as passed.</p>
+  </aside>
+</div></div>
+
+<section class="band" id="problem"><div class="container">
+  <h2 class="t">A vision pipeline can change without anyone noticing.</h2>
+  <div class="two">
+    <div><h3>The problem</h3><p>Training images, annotations, the model file and the record of what it predicted can each be altered, swapped or replayed. A tampered or poisoned asset often looks perfectly normal when you open it, and the model may still run.</p></div>
+    <div><h3>What SentinelCV does</h3><p>It checks each layer separately, then combines the results into one report: what was found, which files are affected, how severe it is, how confident the check is, and what to do next.</p></div>
+  </div>
+</div></section>
+
+<section id="capabilities"><div class="container">
+  <h2 class="t">Five layers, checked in plain terms.</h2>
+  <div class="rows">
+    <div class="row"><h3>Dataset integrity<small>COCO and YOLO ZIP archives</small></h3><p>Looks for duplicate and near-duplicate images, annotations that are invalid or inconsistent with their images, and images that fail integrity checks.</p></div>
+    <div class="row"><h3>Model integrity<small>ONNX and TorchScript files</small></h3><p>Fingerprints the model file and tests how it responds to probe inputs, including trigger-style perturbations, so unexpected behaviour can be flagged.</p></div>
+    <div class="row"><h3>Inference provenance<small>Imported inference records</small></h3><p>Verifies each record’s hashes, its link in the record chain, its signature, nonce, sequence and timestamp, and flags broken chains and replayed records.</p></div>
+    <div class="row"><h3>Distribution shift<small>A reference and a new dataset</small></h3><p>Compares the two datasets and reports whether the new data differs from the reference in ways that could affect the model.</p></div>
+    <div class="row"><h3>Assurance reporting<small>JSON, HTML or PDF</small></h3><p>Lists findings with severity, confidence, evidence, affected files and a recommended action, so a reviewer can act on them.</p></div>
+  </div>
+</div></section>
+
+<section class="band" id="workflow"><div class="container">
+  <h2 class="t">From upload to report in four steps.</h2>
+  <ol class="steps">
+    <li><h3>Choose a scan</h3><p>Pick dataset, model, inference or distribution analysis and upload the files.</p></li>
+    <li><h3>Checks run locally</h3><p>Dataset and model scans run in the background, and you see their real status.</p></li>
+    <li><h3>Review findings</h3><p>Open each finding for its evidence, affected files and recommended action.</p></li>
+    <li><h3>Generate a report</h3><p>Export the assessment as JSON, HTML or PDF.</p></li>
+  </ol>
+</div></section>
+
+<section id="limits"><div class="container">
+  <h2 class="t">What it can and cannot tell you.</h2>
+  <p class="sub">SentinelCV reports evidence. It does not certify that anything is safe.</p>
+  <div class="two">
+    <div class="col"><h3>It can</h3><ul class="can">
+      <li>Show you duplicates, invalid annotations and unusual files in a dataset.</li>
+      <li>Flag a model whose file or behaviour raises concerns.</li>
+      <li>Show which inference records fail verification, and why.</li>
+      <li>Show where two datasets differ.</li></ul></div>
+    <div class="col no"><h3>It cannot</h3><ul class="cannot">
+      <li>Prove an asset is safe. No finding means the checks that ran found nothing.</li>
+      <li>Catch every poisoned sample or hidden backdoor. No check can.</li>
+      <li>Tell you where your data came from before you uploaded it.</li>
+      <li>Run semantic ML analysis. Optional local ML analysis is not configured in this build, and the other checks do not depend on it.</li>
+      <li>Repair data or models. It reports and recommends.</li></ul></div>
+  </div>
+</div></section>
+
+<section class="band" id="offline"><div class="container">
+  <h2 class="t">Your files stay on your machine.</h2>
+  <div class="two">
+    <div><h3>Offline by design</h3><p>Uploads, results and reports are stored locally. Models are run locally with ONNX Runtime, and nothing is sent to an outside service for analysis. This page loads no external fonts, scripts or styles.</p></div>
+    <div><h3>Built on</h3><p>Java 21 and Spring Boot, with a local SQLite database. Cryptographic hash and signature checks are done in Java.</p></div>
+  </div>
+</div></section>
+
+<section class="cta on-ink"><div class="container">
+  <h2>Inspect your first dataset or model.</h2>
+  <p>Upload it, start a scan and read the evidence.</p>
+  <div class="actions"><a class="btn btn-light" th:href="@{/dashboard}" href="/dashboard">Launch SentinelCV</a></div>
+</div></section>
+</main>
+<footer><div class="container">SentinelCV: offline security and integrity assessment for computer-vision systems.</div></footer>
+</body>
+</html>
+

@@ -1,9 +1,56 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Audit History</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scan History · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('history')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1>Scan History</h1>
+      <p>Audit history and compliance verification trail.</p>
+    </header>
+    <div class="card">
+      <div th:if="${error}" class="banner err" role="alert" th:text="${error}"></div>
+      <div th:if="${success}" class="banner okb" role="status" th:text="${success}"></div>
+      <p th:if="${#lists.isEmpty(historyList)}" class="empty">No audit history recorded yet. <a th:href="@{/scan}">Start a scan</a> to generate audit history.</p>
+      <div th:unless="${#lists.isEmpty(historyList)}" class="tw">
+        <table class="tbl stack">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Type</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th>Decision</th>
+              <th>Findings</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="h : ${historyList}">
+              <td data-l="ID" th:text="${h.id}">1</td>
+              <td data-l="Type" th:text="${h.auditType}">DATASET</td>
+              <td data-l="Target" th:text="${h.targetName}">Sample</td>
+              <td data-l="Status" th:text="${h.status}">COMPLETED</td>
+              <td data-l="Decision" th:text="${h.assessmentDecision}">ACCEPT</td>
+              <td data-l="Findings" class="num" th:text="${h.findingsCount}">0</td>
+              <td data-l="Date" th:text="${#temporals.format(h.completedAt, 'dd MMM yyyy HH:mm')}">2026-11-11</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-/*[[${historyList}]]*/ []
+{ "historyList": /*[[${historyList}]]*/ [], "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>

@@ -1,30 +1,22 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <meta name="description" content="SentinelCV — offline-first security assessment platform for computer vision datasets, models, drift and inference provenance." />
-    <title>SentinelCV — Verify Every Layer of Your Vision AI</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/static/assets/index-Bqe5wpRZ.js"></script>
-    <link rel="stylesheet" crossorigin href="/static/assets/index-CQqnqkqg.css">
-  </head>
-  <body>
-    <div id="root"></div>
-    <script id="__DATA__" type="application/json" th:inline="javascript">
-    {
-      "totalDatasets": /*[[${totalDatasets}]]*/ 0,
-      "totalModels": /*[[${totalModels}]]*/ 0,
-      "totalInferences": /*[[${totalInferences}]]*/ 0,
-      "totalFindings": /*[[${totalFindings}]]*/ 0,
-      "criticalFindings": /*[[${criticalFindings}]]*/ 0,
-      "highFindings": /*[[${highFindings}]]*/ 0,
-      "assessment": /*[[${assessment}]]*/ {},
-      "recentAudits": /*[[${recentAudits}]]*/ []
-    }
-    </script>
-  </body>
-</html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Overview · SentinelCV</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css"><link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css"><link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<div class="shell"><aside th:replace="~{fragments/layout :: nav('overview')}"></aside>
+<main class="content" id="main">
+ <header class="ph"><h1>Overview</h1><p>The current state of everything SentinelCV has inspected.</p></header>
+ <div id="msg"></div>
+ <div class="stats" id="stats" aria-live="polite"></div>
+ <h2 class="sec">System assessment</h2>
+ <div class="grid2"><div class="card" id="assess"></div>
+  <div class="card"><div class="stat"><div class="l">Check status</div></div><ul class="list" id="checks" style="margin-top:8px"></ul></div></div>
+ <div class="ml" style="margin-top:16px"><span aria-hidden="true">⊘</span><div><b>ML-based analysis: Not configured</b><small>Conventional Java checks run independently of it.</small></div></div>
+ <h2 class="sec">Recent scans</h2><div id="recent"></div>
+</main></div>
+<script id="__DATA__" type="application/json" th:inline="javascript">
+{"totalDatasets":/*[[${totalDatasets}]]*/ 0,"totalModels":/*[[${totalModels}]]*/ 0,"totalInferences":/*[[${totalInferences}]]*/ 0,"totalFindings":/*[[${totalFindings}]]*/ 0,"criticalFindings":/*[[${criticalFindings}]]*/ 0,"highFindings":/*[[${highFindings}]]*/ 0,"assessment":/*[[${assessment}]]*/ {},"recentAudits":/*[[${recentAudits}]]*/ [],"error":/*[[${error}]]*/ null,"success":/*[[${success}]]*/ null}
+</script>
+<script src="/static/js/api.js"></script><script src="/static/js/overview.js"></script>
+</body></html>

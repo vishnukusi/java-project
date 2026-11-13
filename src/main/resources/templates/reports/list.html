@@ -1,9 +1,52 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Reports</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reports · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('reports')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1>Assurance Reports</h1>
+      <p>Generated security and integrity compliance reports.</p>
+    </header>
+    <div class="card">
+      <div th:if="${error}" class="banner err" role="alert" th:text="${error}"></div>
+      <div th:if="${success}" class="banner okb" role="status" th:text="${success}"></div>
+      <p th:if="${#lists.isEmpty(reports)}" class="empty">No reports generated yet.</p>
+      <div th:unless="${#lists.isEmpty(reports)}" class="tw">
+        <table class="tbl stack">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Report Type</th>
+              <th>Format</th>
+              <th>Path</th>
+              <th>Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="r : ${reports}">
+              <td data-l="ID" th:text="${r.id}">1</td>
+              <td data-l="Report Type" th:text="${r.reportType}">SYSTEM</td>
+              <td data-l="Format" th:text="${r.format}">PDF</td>
+              <td data-l="Path"><a th:href="@{'/reports/download/' + ${r.id}}" th:text="${r.filePath}">Download</a></td>
+              <td data-l="Generated" th:text="${#temporals.format(r.generatedAt, 'dd MMM yyyy HH:mm')}">Date</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-/*[[${reports}]]*/ []
+{ "reports": /*[[${reports}]]*/ [], "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>

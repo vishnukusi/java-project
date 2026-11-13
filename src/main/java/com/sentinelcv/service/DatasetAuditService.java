@@ -27,6 +27,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -56,6 +58,9 @@ public class DatasetAuditService {
     private final AuditHistoryRepository auditHistoryRepository;
     private final SettingRepository settingRepository;
     private final RiskAssessmentService riskAssessmentService;
+
+    @Autowired(required = false)
+    private PlatformTransactionManager transactionManager;
 
     @Autowired
     public DatasetAuditService(List<DatasetParser> parsers,
@@ -110,48 +115,47 @@ public class DatasetAuditService {
         }
 
         DatasetAudit audit = auditOpt.get();
-        Optional<Dataset> datasetOpt = datasetRepository.findById(audit.getDatasetId());
-        if (datasetOpt.isEmpty()) {
-            audit.setStatus(AuditStatus.FAILED);
-            audit.setErrorMessage("Associated dataset not found: " + audit.getDatasetId());
-            return auditRepository.save(audit);
-        }
-
-        Dataset dataset = datasetOpt.get();
-        File datasetDir = new File(dataset.getPath());
-        if (!datasetDir.exists() || !datasetDir.isDirectory()) {
-            audit.setStatus(AuditStatus.FAILED);
-            audit.setErrorMessage("Dataset directory does not exist on disk: " + dataset.getPath());
-            if (riskAssessmentService != null) {
-                riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
-                        String.valueOf(dataset.getId()), dataset.getSha256Hash(), CheckExecutionStatus.FAILED, "Dataset directory does not exist on disk");
-            }
-            return auditRepository.save(audit);
-        }
-
-        audit.setStatus(AuditStatus.RUNNING);
-        audit.setStartedAt(LocalDateTime.now());
-        auditRepository.save(audit);
-        if (riskAssessmentService != null) {
-            riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
-                    String.valueOf(dataset.getId()), dataset.getSha256Hash(), CheckExecutionStatus.NOT_EXECUTED, "Dataset audit in progress");
-        }
+        Dataset dataset = null;
 
         try {
-            // 1. Select appropriate parser using Strategy pattern
-            DatasetParser parser = parsers.stream()
-                    .filter(p -> p.getFormat() == dataset.getFormat() || p.canParse(datasetDir))
-                    .findFirst()
-                    .orElseThrow(() -> new DatasetParsingException("No compatible parser found for dataset: " + dataset.getName()));
+            Optional<Dataset> datasetOpt = datasetRepository.findById(audit.getDatasetId());
+            if (datasetOpt.isEmpty()) {
+                return markAuditFailedSafely(audit, null, "Associated dataset not found: " + audit.getDatasetId(), null);
+            }
 
-            logger.info("Executing dataset audit for: {} using parser: {}", dataset.getName(), parser.getClass().getSimpleName());
+            dataset = datasetOpt.get();
+            File datasetDir = new File(dataset.getPath());
+            if (!datasetDir.exists() || !datasetDir.isDirectory()) {
+                return markAuditFailedSafely(
+                        audit,
+                        String.valueOf(dataset.getId()),
+                        "Dataset directory does not exist on disk: " + dataset.getPath(),
+                        dataset.getSha256Hash()
+                );
+            }
+
+            audit.setStatus(AuditStatus.RUNNING);
+            audit.setStartedAt(LocalDateTime.now());
+            audit.setCompletedAt(null);
+            audit.setErrorMessage(null);
+            audit.setAssessmentDecision(null);
+            auditRepository.save(audit);
+            if (riskAssessmentService != null) {
+                riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
+                        String.valueOf(dataset.getId()), dataset.getSha256Hash(), CheckExecutionStatus.NOT_EXECUTED, "Dataset audit in progress");
+            }
+
+            // 1. Strictly select parser matching the persisted authoritative dataset format
+            DatasetParser parser = DatasetParser.resolveAuthoritativeParser(parsers, dataset);
+
+            logger.info("Executing dataset audit (auditId={}, datasetId={}, name='{}', persistedFormat={}) using parser: {}",
+                    audit.getId(), dataset.getId(), dataset.getName(), dataset.getFormat(), parser.getClass().getSimpleName());
             DatasetModels.ParseResult parseResult = parser.parse(datasetDir);
 
-            // Update dataset basic metrics
+            // Prepare dataset metrics
             dataset.setTotalImages(parseResult.images.size());
             dataset.setTotalAnnotations(parseResult.annotations.size());
             dataset.setTotalClasses(parseResult.categories.size());
-            datasetRepository.save(dataset);
 
             List<SecurityFinding> allFindings = new ArrayList<>();
 
@@ -212,12 +216,17 @@ public class DatasetAuditService {
                         .build());
             }
 
-            // 6. Persist Findings
+            // Compute deterministic directory hash of the extracted dataset
+            String dirHash = null;
+            try {
+                dirHash = HashUtil.calculateDatasetDirectoryHash(datasetDir);
+                dataset.setSha256Hash(dirHash);
+            } catch (Exception e) {
+                logger.warn("Could not calculate directory content hash for dataset {}: {}", dataset.getName(), e.getMessage());
+            }
+
             int crit = 0, high = 0, med = 0, low = 0, info = 0;
             for (SecurityFinding f : allFindings) {
-                datasetFindingRepository.save(f, dataset.getId());
-                securityFindingRepository.save(f);
-
                 switch (f.getSeverity()) {
                     case CRITICAL -> crit++;
                     case HIGH -> high++;
@@ -225,16 +234,6 @@ public class DatasetAuditService {
                     case LOW -> low++;
                     case INFO -> info++;
                 }
-            }
-
-            // Compute deterministic directory hash of the extracted dataset
-            String dirHash = null;
-            try {
-                dirHash = HashUtil.calculateDatasetDirectoryHash(datasetDir);
-                dataset.setSha256Hash(dirHash);
-                datasetRepository.save(dataset);
-            } catch (Exception e) {
-                logger.warn("Could not calculate directory content hash for dataset {}: {}", dataset.getName(), e.getMessage());
             }
 
             // 7. Calculate Decision (ACCEPT, REVIEW, QUARANTINE) - fails closed if hashing failed
@@ -247,61 +246,82 @@ public class DatasetAuditService {
                 decision = AssessmentDecision.ACCEPT;
             }
 
-            // Record explicit structured check execution status
-            if (riskAssessmentService != null) {
-                CheckExecutionStatus integrityStatus;
-                if (parseResult.images.isEmpty() || crit > 0 || stats.integrityScore < 50.0 || !parseResult.parsingErrors.isEmpty() || dirHash == null) {
-                    integrityStatus = CheckExecutionStatus.FAILED;
-                } else {
-                    integrityStatus = CheckExecutionStatus.PASSED;
+            final Dataset persistedDataset = dataset;
+            final String recordedHash = dirHash != null ? dirHash : dataset.getSha256Hash();
+            final boolean dirHashPresent = dirHash != null;
+            final int finalCrit = crit;
+            final int finalHigh = high;
+            final int finalMed = med;
+            final int finalLow = low;
+            final int finalInfo = info;
+
+            // 6 & 7b. Persist findings, metrics, check status, and COMPLETED state atomically
+            // so findings are always durable before/with the COMPLETED transition.
+            runInTransaction(() -> {
+                for (SecurityFinding f : allFindings) {
+                    datasetFindingRepository.save(f, persistedDataset.getId());
+                    securityFindingRepository.save(f);
                 }
-                String recordedHash = dirHash != null ? dirHash : dataset.getSha256Hash();
-                riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
-                        String.valueOf(dataset.getId()), recordedHash, integrityStatus,
-                        "Dataset integrity score: " + stats.integrityScore);
-            }
 
-            audit.setCriticalFindings(crit);
-            audit.setHighFindings(high);
-            audit.setMediumFindings(med);
-            audit.setLowFindings(low);
-            audit.setInfoFindings(info);
-            audit.setTotalFindings(allFindings.size());
-            audit.setIntegrityScore(stats.integrityScore);
-            audit.setAssessmentDecision(decision);
-            audit.setStatus(AuditStatus.COMPLETED);
-            audit.setCompletedAt(LocalDateTime.now());
-            audit.setSummary(String.format("Audited %d images, %d annotations across %d classes. Integrity score: %.1f/100. Findings: %d.",
-                    stats.totalImages, stats.totalAnnotations, stats.totalClasses, stats.integrityScore, allFindings.size()));
+                datasetRepository.save(persistedDataset);
 
-            auditRepository.save(audit);
+                if (riskAssessmentService != null) {
+                    CheckExecutionStatus integrityStatus;
+                    if (parseResult.images.isEmpty() || finalCrit > 0 || stats.integrityScore < 50.0
+                            || !parseResult.parsingErrors.isEmpty() || !dirHashPresent) {
+                        integrityStatus = CheckExecutionStatus.FAILED;
+                    } else {
+                        integrityStatus = CheckExecutionStatus.PASSED;
+                    }
+                    riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
+                            String.valueOf(persistedDataset.getId()), recordedHash, integrityStatus,
+                            "Dataset integrity score: " + stats.integrityScore);
+                }
 
-            // Record in Audit History
-            AuditHistory history = new AuditHistory();
-            history.setAuditType("DATASET");
-            history.setTargetName(dataset.getName());
-            history.setTargetId(dataset.getId());
-            history.setStatus("COMPLETED");
-            history.setFindingsCount(allFindings.size());
-            history.setAssessmentDecision(decision.name());
-            history.setStartedAt(audit.getStartedAt());
-            history.setCompletedAt(audit.getCompletedAt());
-            history.setSummary(audit.getSummary());
-            auditHistoryRepository.save(history);
+                audit.setCriticalFindings(finalCrit);
+                audit.setHighFindings(finalHigh);
+                audit.setMediumFindings(finalMed);
+                audit.setLowFindings(finalLow);
+                audit.setInfoFindings(finalInfo);
+                audit.setTotalFindings(allFindings.size());
+                audit.setIntegrityScore(stats.integrityScore);
+                audit.setAssessmentDecision(decision);
+                audit.setErrorMessage(null);
+                audit.setStatus(AuditStatus.COMPLETED);
+                audit.setCompletedAt(LocalDateTime.now());
+                audit.setSummary(String.format("Audited %d images, %d annotations across %d classes. Integrity score: %.1f/100. Findings: %d.",
+                        stats.totalImages, stats.totalAnnotations, stats.totalClasses, stats.integrityScore, allFindings.size()));
+
+                auditRepository.save(audit);
+
+                AuditHistory history = new AuditHistory();
+                history.setAuditType("DATASET");
+                history.setTargetName(persistedDataset.getName());
+                history.setTargetId(persistedDataset.getId());
+                history.setStatus("COMPLETED");
+                history.setFindingsCount(allFindings.size());
+                history.setAssessmentDecision(decision.name());
+                history.setStartedAt(audit.getStartedAt());
+                history.setCompletedAt(audit.getCompletedAt());
+                history.setSummary(audit.getSummary());
+                auditHistoryRepository.save(history);
+            });
 
             logger.info("Dataset audit completed for: {}. Decision: {}", dataset.getName(), decision);
             return audit;
 
-        } catch (Exception e) {
-            logger.error("Dataset audit failed for: {}", dataset.getName(), e);
-            if (riskAssessmentService != null) {
-                riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
-                        String.valueOf(dataset.getId()), dataset.getSha256Hash(), CheckExecutionStatus.FAILED, e.getMessage());
+        } catch (Throwable t) {
+            String assetLabel = dataset != null ? dataset.getName() : "auditId=" + auditId;
+            logger.error("Dataset audit failed for: {}", assetLabel, t);
+            String targetIdStr = dataset != null && dataset.getId() != null
+                    ? String.valueOf(dataset.getId())
+                    : (audit.getDatasetId() != null ? String.valueOf(audit.getDatasetId()) : null);
+            String sha = dataset != null ? dataset.getSha256Hash() : null;
+            markAuditFailedSafely(audit, targetIdStr, extractErrorMessage(t), sha);
+            if (t instanceof Error err) {
+                throw err;
             }
-            audit.setStatus(AuditStatus.FAILED);
-            audit.setCompletedAt(LocalDateTime.now());
-            audit.setErrorMessage(e.getMessage());
-            return auditRepository.save(audit);
+            return audit;
         }
     }
 
@@ -313,9 +333,63 @@ public class DatasetAuditService {
         try {
             DatasetAudit result = executeAudit(auditId);
             return CompletableFuture.completedFuture(result);
-        } catch (Exception e) {
-            logger.error("Async dataset audit execution failed for audit ID {}", auditId, e);
-            return CompletableFuture.failedFuture(e);
+        } catch (Throwable t) {
+            logger.error("Async dataset audit execution failed for audit ID {}", auditId, t);
+            ensureTerminalFailureState(auditId, extractErrorMessage(t));
+            return CompletableFuture.failedFuture(t);
         }
+    }
+
+    private void runInTransaction(Runnable work) {
+        if (transactionManager != null) {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> work.run());
+        } else {
+            work.run();
+        }
+    }
+
+    private DatasetAudit markAuditFailedSafely(DatasetAudit audit, String datasetIdStr, String message, String datasetHash) {
+        audit.setStatus(AuditStatus.FAILED);
+        audit.setCompletedAt(LocalDateTime.now());
+        audit.setAssessmentDecision(null);
+        audit.setErrorMessage(message);
+        if (riskAssessmentService != null && datasetIdStr != null) {
+            try {
+                riskAssessmentService.recordCheckStatus("dataset.integrity", audit.getId(),
+                        datasetIdStr, datasetHash, CheckExecutionStatus.FAILED, message);
+            } catch (Exception ex) {
+                logger.warn("Could not record failed check status for audit {}: {}", audit.getId(), ex.getMessage());
+            }
+        }
+        try {
+            return auditRepository.save(audit);
+        } catch (Exception ex) {
+            logger.error("Failed to persist FAILED status for dataset audit {}: {}", audit.getId(), ex.getMessage());
+            return audit;
+        }
+    }
+
+    private void ensureTerminalFailureState(Long auditId, String message) {
+        try {
+            auditRepository.findById(auditId).ifPresent(existing -> {
+                if (existing.getStatus() == AuditStatus.PENDING || existing.getStatus() == AuditStatus.RUNNING) {
+                    existing.setStatus(AuditStatus.FAILED);
+                    existing.setCompletedAt(LocalDateTime.now());
+                    existing.setAssessmentDecision(null);
+                    existing.setErrorMessage(message);
+                    auditRepository.save(existing);
+                }
+            });
+        } catch (Exception ex) {
+            logger.error("Could not mark orphaned dataset audit {} as FAILED: {}", auditId, ex.getMessage());
+        }
+    }
+
+    private static String extractErrorMessage(Throwable t) {
+        if (t == null) {
+            return "Unknown dataset audit execution error";
+        }
+        String msg = t.getMessage();
+        return (msg != null && !msg.isBlank()) ? msg : t.getClass().getSimpleName();
     }
 }

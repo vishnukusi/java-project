@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>New Scan · SentinelCV</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css"><link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css"><link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<div class="shell"><aside th:replace="~{fragments/layout :: nav('scan')}"></aside>
+<main class="content" id="main">
+ <header class="ph"><h1>New Scan</h1><p>Choose what to inspect. Everything runs on this machine.</p></header>
+ <div id="msg" aria-live="polite"></div>
+ <div class="tiles" role="tablist" aria-label="Scan type">
+  <button class="tile" role="tab" data-t="dataset"><b>Dataset Scan</b><span>COCO or YOLO datasets</span></button>
+  <button class="tile" role="tab" data-t="model"><b>Model Scan</b><span>ONNX or TorchScript models</span></button>
+  <button class="tile" role="tab" data-t="inference"><b>Inference Verification</b><span>Hashes, signatures, provenance</span></button>
+  <button class="tile" role="tab" data-t="drift"><b>Distribution Analysis</b><span>Reference vs new dataset</span></button>
+ </div>
+ <div class="card">
+ <form data-type="dataset" enctype="multipart/form-data">
+  <div class="field"><label for="dn">Dataset name</label><input type="text" id="dn" name="name" required maxlength="100"></div>
+  <fieldset class="radios"><legend>Annotation format</legend><label><input type="radio" name="format" value="COCO" checked> COCO</label><label><input type="radio" name="format" value="YOLO"> YOLO</label></fieldset>
+  <label class="drop"><input type="file" name="archive" accept=".zip"><span>Drop a <b>.zip</b> archive here or click to browse</span><br><span class="fn"></span></label>
+  <p class="hint">Accepted: .zip archives containing a COCO or YOLO dataset. The format is not detected automatically, so choose the right one. Server upload limit: <span th:text="${maxUploadSize}">not reported</span>.</p><p class="invalid" role="alert"></p>
+  <ul class="inc"><li>Upload and validation</li><li>Integrity assessment (duplicates, annotations, images)</li><li>Risk assessment</li></ul>
+  <div class="bar" aria-hidden="true"><i></i></div>
+  <div class="row-a"><button class="btn btn-primary" type="submit">Start Scan</button><span class="hint why"></span><span class="hint st" role="status"></span></div>
+ </form>
+ <form data-type="model" enctype="multipart/form-data" hidden>
+  <div class="field"><label for="mn">Model name</label><input type="text" id="mn" name="name" required maxlength="100"></div>
+  <fieldset class="radios"><legend>Model format</legend><label><input type="radio" name="format" value="ONNX" checked> ONNX</label><label><input type="radio" name="format" value="TORCHSCRIPT"> TorchScript</label></fieldset>
+  <label class="drop"><input type="file" name="modelFile" accept=".onnx,.pt,.pth,.torchscript"><span>Drop a model file here or click to browse</span><br><span class="fn"></span></label>
+  <p class="hint">Accepted: .onnx, or .pt / .pth / .torchscript. Server upload limit: <span th:text="${maxUploadSize}">not reported</span>.</p><p class="invalid" role="alert"></p>
+  <ul class="inc"><li>Upload and validation</li><li>Model identity and behavioural checks</li><li>Risk assessment</li></ul>
+  <div class="bar" aria-hidden="true"><i></i></div>
+  <div class="row-a"><button class="btn btn-primary" type="submit">Start Scan</button><span class="hint why"></span><span class="hint st" role="status"></span></div>
+ </form>
+ <form data-type="inference" enctype="multipart/form-data" hidden>
+  <label class="drop"><input type="file" name="jsonFile" accept=".json,application/json"><span>Drop a <b>.json</b> file of inference records or click to browse</span><br><span class="fn"></span></label>
+  <div class="field" style="margin-top:16px"><label for="jc">Or paste JSON records</label><textarea id="jc" name="jsonContent" spellcheck="false"></textarea></div>
+  <p class="hint">Records are added to the single shared record chain and verified on import (hashes, chain links, signatures, replays). A file takes precedence over pasted text.</p><p class="invalid" role="alert"></p>
+  <div class="row-a"><button class="btn btn-primary" type="submit">Import and verify</button><button class="btn btn-secondary" type="button" id="reverify">Re-verify existing records</button><span class="hint why"></span><span class="hint st" role="status"></span></div>
+ </form>
+ <form data-type="drift" hidden enctype="multipart/form-data">
+  <div class="field"><label for="rd">Reference dataset</label><select id="rd" name="referenceDatasetId"><option value="">Select…</option></select></div>
+  <div class="field"><label for="ed">New dataset</label><select id="ed" name="evaluationDatasetId"><option value="">Select…</option></select></div>
+  <p class="hint" id="nods">Datasets appear here once they have been uploaded with a Dataset Scan. Two are needed.</p>
+  <div class="row-a"><button class="btn btn-primary" type="submit">Start Scan</button><span class="hint why"></span><span class="hint st" role="status"></span></div>
+ </form>
+ </div>
+ <div class="ml" style="margin-top:16px"><span aria-hidden="true">⊘</span><div><b>ML-based assessment: Not configured</b><small>It is not part of any scan above. Conventional checks do not depend on it.</small></div></div>
+</main></div>
+<script src="/static/js/api.js"></script><script src="/static/js/scan.js"></script>
+</body></html>
+

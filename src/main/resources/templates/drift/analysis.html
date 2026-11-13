@@ -1,12 +1,54 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Drift Analysis</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distribution Drift · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('overview')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1>Distribution Drift Analysis</h1>
+      <p>Compare statistical distributions between datasets.</p>
+    </header>
+    <div class="card">
+      <div th:if="${error}" class="banner err" role="alert" th:text="${error}"></div>
+      <div th:if="${success}" class="banner okb" role="status" th:text="${success}"></div>
+      <p th:if="${#lists.isEmpty(driftAudits)}" class="empty">No drift analyses recorded yet. <a th:href="@{/scan}">Start a scan</a> to compare datasets.</p>
+      <div th:unless="${#lists.isEmpty(driftAudits)}" class="tw">
+        <table class="tbl stack">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Reference</th>
+              <th>Evaluation</th>
+              <th>Drift Detected</th>
+              <th>Severity</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="a : ${driftAudits}">
+              <td data-l="ID" th:text="${a.id}">1</td>
+              <td data-l="Reference" th:text="${a.referenceDatasetId}">Ref</td>
+              <td data-l="Evaluation" th:text="${a.evaluationDatasetId}">Eval</td>
+              <td data-l="Drift Detected" th:text="${a.driftDetected ? 'YES' : 'NO'}">NO</td>
+              <td data-l="Severity" th:text="${a.severity}">LOW</td>
+              <td data-l="Date" th:text="${#temporals.format(a.completedAt, 'dd MMM yyyy HH:mm')}">Date</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-{
-  "datasets": /*[[${datasets}]]*/ [],
-  "driftAudits": /*[[${driftAudits}]]*/ []
-}
+{ "datasets": /*[[${datasets}]]*/ [], "driftAudits": /*[[${driftAudits}]]*/ [], "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>

@@ -1,0 +1,36 @@
+services:
+  sentinelcv:
+    build:
+      context: .
+      target: runtime
+    image: sentinelcv:local
+    container_name: sentinelcv-app
+    ports:
+      - "8080:8080"
+    volumes:
+      - sentinelcv_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  test:
+    profiles:
+      - test
+    build:
+      context: .
+      target: builder
+    image: sentinelcv-builder:local
+    command:
+      - mvn
+      - test
+      - -B
+      - "-DargLine=-Xmx512m -XX:+EnableDynamicAgentLoading -Dnet.bytebuddy.experimental=true -Djava.awt.headless=true"
+
+volumes:
+  sentinelcv_data:
+    name: sentinelcv_data
+

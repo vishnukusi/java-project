@@ -1,7 +1,166 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Model Audit Details</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Model Audit Results · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('models')}"></aside>
+  <main class="content" id="audit-main"
+        th:with="statusName=${audit.status != null ? audit.status.name() : 'PENDING'},
+                 isPending=${statusName == 'PENDING'},
+                 isRunning=${statusName == 'RUNNING'},
+                 isActive=${isPending or isRunning},
+                 isCompleted=${statusName == 'COMPLETED'},
+                 isFailed=${statusName == 'FAILED'},
+                 isCancelled=${statusName == 'CANCELLED'}">
+    <div id="audit-tracker"
+         th:attr="data-initial-status=${statusName},
+                  data-status-url=@{/models/{id}/audits/{auditId}/status(id=${model.id}, auditId=${audit.id})},
+                  data-detail-url=@{/models/{id}/audits/{auditId}(id=${model.id}, auditId=${audit.id})}">
+      <header class="ph">
+        <div class="audit-head">
+          <div>
+            <h1 th:text="${model != null ? model.name + ' · Audit #' + audit.id : 'Model Audit Results'}">Model Audit Results</h1>
+            <div class="audit-head-meta">
+              <span id="audit-status-badge"
+                    class="badge"
+                    th:classappend="${isFailed ? 'b-crit' : (isRunning ? 'b-warn' : (isCompleted ? (audit.assessmentDecision != null and audit.assessmentDecision.name() == 'QUARANTINE' ? 'b-crit' : (audit.assessmentDecision != null and audit.assessmentDecision.name() == 'REVIEW' ? 'b-warn' : 'b-ok')) : 'b-na'))}"
+                    th:text="${statusName}">RUNNING</span>
+              <span id="audit-status-line"
+                    th:text="${isPending ? 'Status: PENDING · Queued for background execution' :
+                              (isRunning ? 'Status: RUNNING · Started: ' + (audit.startedAt != null ? #temporals.format(audit.startedAt, 'dd MMM yyyy HH:mm:ss') : 'just now') :
+                              (isCompleted ? 'Status: COMPLETED · Completed: ' + (audit.completedAt != null ? #temporals.format(audit.completedAt, 'dd MMM yyyy HH:mm:ss') : '—') :
+                              (isFailed ? 'Status: FAILED · Stopped: ' + (audit.completedAt != null ? #temporals.format(audit.completedAt, 'dd MMM yyyy HH:mm:ss') : '—') :
+                              'Status: CANCELLED · Stopped: ' + (audit.completedAt != null ? #temporals.format(audit.completedAt, 'dd MMM yyyy HH:mm:ss') : '—'))))}">Status</span>
+              <span th:if="${model != null and model.format != null}" th:text="${'Format: ' + model.format}">Format</span>
+            </div>
+          </div>
+          <a class="btn btn-primary" th:href="@{/scan}">Run Another Scan</a>
+        </div>
+      </header>
+
+      <!-- PENDING or RUNNING -->
+      <section th:if="${isActive}" id="audit-pending-panel" class="audit-progress-card" role="status" aria-live="polite">
+        <div class="scv-spinner" aria-hidden="true"></div>
+        <div>
+          <h2>Analysis in progress</h2>
+          <p id="audit-progress-copy" style="margin-top:8px; color:var(--text-2)"
+             th:text="${isPending ? 'Model audit is queued and waiting for an analysis worker. Assessment decision and findings are withheld until execution finishes.' : 'Model metadata inspection, behavioral checks, and perturbation tests are currently running in the background. Results will appear automatically once complete.'}">
+            Analysis in progress.
+          </p>
+          <p id="poll-status-note" class="audit-note">Checking live audit status automatically…</p>
+          <div class="audit-actions">
+            <button type="button" id="audit-refresh-btn" class="btn btn-secondary">Refresh status</button>
+            <a class="btn btn-secondary" th:href="@{/models/{id}(id=${model.id})}">View model record</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAILED -->
+      <section th:if="${isFailed}" id="audit-failed-panel">
+        <div class="banner err" role="alert">
+          <strong>Audit Failed:</strong>
+          <span th:text="${audit.errorMessage != null and !#strings.isEmpty(audit.errorMessage) ? audit.errorMessage : 'Model audit execution failed before results could be finalized.'}">Failure reason</span>
+        </div>
+        <div class="card">
+          <h3>Incomplete Assessment</h3>
+          <p style="margin-top:8px; color:var(--text-2)">
+            Assessment decision and security findings are unavailable because this model audit failed before completion.
+          </p>
+          <div class="audit-actions">
+            <a class="btn btn-primary" th:href="@{/scan}">Run Another Scan</a>
+            <a class="btn btn-secondary" th:href="@{/models/{id}(id=${model.id})}">View model record</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- CANCELLED -->
+      <section th:if="${isCancelled}" id="audit-cancelled-panel">
+        <div class="ml" role="status">
+          <div>
+            <strong>Audit Cancelled</strong>
+            <small th:text="${audit.errorMessage != null and !#strings.isEmpty(audit.errorMessage) ? audit.errorMessage : 'This model audit was cancelled before completion. Assessment decision and findings are unavailable.'}">Cancelled</small>
+          </div>
+        </div>
+      </section>
+
+      <!-- COMPLETED -->
+      <th:block th:if="${isCompleted}">
+        <div class="stats" id="audit-kpis">
+          <div class="card stat">
+            <div class="l">Assessment Decision</div>
+            <div class="v" style="font-size:1.35rem; margin-top:4px;">
+              <span class="badge"
+                    style="font-size:0.95rem; padding:4px 12px;"
+                    th:classappend="${audit.assessmentDecision == null ? 'b-na' : (audit.assessmentDecision.name() == 'QUARANTINE' ? 'b-crit' : (audit.assessmentDecision.name() == 'REVIEW' ? 'b-warn' : 'b-ok'))}"
+                    th:text="${audit.assessmentDecision != null ? audit.assessmentDecision.name() : 'UNKNOWN'}">ACCEPT</span>
+            </div>
+          </div>
+          <div class="card stat">
+            <div class="l">Total Findings</div>
+            <div class="v" th:text="${audit.totalFindings}">0</div>
+          </div>
+          <div class="card stat">
+            <div class="l">Critical Findings</div>
+            <div class="v" style="color:var(--crit)" th:text="${audit.criticalFindings}">0</div>
+          </div>
+          <div class="card stat">
+            <div class="l">High Findings</div>
+            <div class="v" style="color:var(--warn)" th:text="${audit.highFindings}">0</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px" id="audit-summary-card">
+          <h3>Audit Summary</h3>
+          <p style="margin-top:8px" th:text="${audit.summary != null ? audit.summary : 'Summary unavailable.'}">Summary</p>
+          <div th:if="${audit.behavioralFingerprint}" style="margin-top:10px; font-size:13px; color:var(--text-2);">
+            <strong>Behavioral Fingerprint:</strong>
+            <span class="audit-evidence" th:text="${audit.behavioralFingerprint}"></span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px" id="audit-findings-card">
+          <h3>Security Findings</h3>
+          <div th:if="${findings == null or #lists.isEmpty(findings)}" style="color:var(--text-2); padding:12px 0;">
+            No security vulnerabilities or malicious layers flagged in this model.
+          </div>
+          <div th:if="${findings != null and not #lists.isEmpty(findings)}" class="tw" style="margin-top:12px;">
+            <table class="tbl stack">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Evidence</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr th:each="f : ${findings}">
+                  <td data-l="Severity">
+                    <span class="badge"
+                          th:classappend="${f.severity == T(com.sentinelcv.enums.FindingSeverity).CRITICAL ? 'b-crit' : ((f.severity == T(com.sentinelcv.enums.FindingSeverity).HIGH or f.severity == T(com.sentinelcv.enums.FindingSeverity).MEDIUM) ? 'b-warn' : 'b-na')}"
+                          th:text="${f.severity}">HIGH</span>
+                  </td>
+                  <td data-l="Type" th:text="${f.category}">Category</td>
+                  <td data-l="Description" th:text="${f.description}">Description</td>
+                  <td data-l="Evidence" class="audit-evidence" th:text="${f.evidence != null ? f.evidence : '—'}">Evidence</td>
+                  <td data-l="Location" class="audit-evidence" th:text="${f.affectedAsset != null ? f.affectedAsset : '—'}">Asset</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </th:block>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
 {
   "model": /*[[${model}]]*/ {},
@@ -9,5 +168,6 @@
   "findings": /*[[${findings}]]*/ []
 }
 </script>
+<script th:src="@{/static/js/audit_detail.js}" src="/static/js/audit_detail.js"></script>
 </body>
 </html>

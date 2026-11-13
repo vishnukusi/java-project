@@ -43,7 +43,7 @@ public class DashboardController {
         this.riskAssessmentService = riskAssessmentService;
     }
 
-    @GetMapping({"/", "/dashboard"})
+    @GetMapping("/dashboard")
     public String dashboard(Model model) {
         long totalDatasets = datasetRepository.count();
         long totalModels = modelRepository.count();

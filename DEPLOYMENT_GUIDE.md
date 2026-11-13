@@ -2,7 +2,46 @@
 
 ## 1. Quick Startup Instructions
 
-### 1.1 macOS / Linux
+### 1.1 Recommended: Docker Desktop (macOS / Linux / Windows)
+SentinelCV enforces fail-closed ZIP archive security using Java NIO `SecureDirectoryStream` (`ArchiveUtil`), which macOS `APFS` / `HFS+` and macOS VirtioFS bind mounts do not support. Running SentinelCV inside its Linux container with the named Docker volume (`sentinelcv_data`) provides full `SecureDirectoryStream` support, POSIX `FileLock` isolation, and SQLite `WAL` persistence.
+
+```bash
+# 1. Navigate to project root
+cd /path/to/java-project-main
+
+# 2. Build the Linux Java 21 image and start SentinelCV in the background
+docker compose up -d --build
+
+# 3. View startup logs
+docker compose logs -f sentinelcv
+
+# 4. Stop without removing persisted datasets, models, DB, or keys
+docker compose stop        # resume later with: docker compose start
+# or remove container/network safely while keeping sentinelcv_data volume:
+docker compose down        # resume later with: docker compose up -d
+```
+
+> **CRITICAL STORAGE WARNING**
+> - **Never** bind-mount your macOS `./data` folder into `/app/data` (VirtioFS bind mounts do not provide the Linux `ext4` `SecureDirectoryStream` guarantees needed for dataset uploads).
+> - **Never** run `docker compose down -v` unless you intentionally want to permanently erase `sentinelcv_data` (SQLite database, extracted datasets, uploaded models, reports, and `/app/data/keys/provenance.key`).
+
+#### Running the Linux Test Suite in Docker
+```bash
+docker compose --profile test run --rm test
+```
+
+#### Backing Up and Restoring the `sentinelcv_data` Named Volume
+```bash
+# Backup /app/data from sentinelcv_data into a gzip archive in the current directory
+docker run --rm --entrypoint sh --user 0 -v sentinelcv_data:/data:ro -v "$(pwd)":/backup sentinelcv:local \
+  -c 'tar czf /backup/sentinelcv_data_backup.tar.gz -C /data .'
+
+# Restore into sentinelcv_data (stop sentinelcv first with `docker compose stop`)
+docker run --rm --entrypoint sh --user 0 -v sentinelcv_data:/data -v "$(pwd)":/backup sentinelcv:local \
+  -c 'tar xzf /backup/sentinelcv_data_backup.tar.gz -C /data && chown -R 10001:10001 /data'
+```
+
+### 1.2 Native macOS / Linux (Development Only)
 To run SentinelCV with the bundled Amazon Corretto 21 JDK and Apache Maven 3.9.6:
 ```bash
 # 1. Navigate to project root
@@ -15,7 +54,7 @@ chmod +x run.sh
 ./run.sh
 ```
 
-### 1.2 Windows (Command Prompt / PowerShell / WSL)
+### 1.3 Windows (Command Prompt / PowerShell / WSL)
 If running under Windows WSL (Ubuntu / Debian):
 ```bash
 ./run.sh

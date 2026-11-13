@@ -10,8 +10,11 @@ import com.sentinelcv.repository.ModelAuditRepository;
 import com.sentinelcv.repository.ModelFindingRepository;
 import com.sentinelcv.service.ModelAuditService;
 import com.sentinelcv.util.HashUtil;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -174,11 +177,15 @@ public class ModelController {
     @GetMapping("/{id}/audits/{auditId}")
     public String viewAuditDetails(@PathVariable("id") Long id,
                                    @PathVariable("auditId") Long auditId,
-                                   Model model) {
+                                   Model model,
+                                   HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate");
+        response.setHeader(HttpHeaders.PRAGMA, "no-cache");
+
         Optional<MlModel> modelOpt = modelRepository.findById(id);
         Optional<ModelAudit> auditOpt = modelAuditRepository.findById(auditId);
 
-        if (modelOpt.isEmpty() || auditOpt.isEmpty()) {
+        if (modelOpt.isEmpty() || auditOpt.isEmpty() || !id.equals(auditOpt.get().getModelId())) {
             return "redirect:/models";
         }
 
@@ -196,7 +203,7 @@ public class ModelController {
             @PathVariable("id") Long id,
             @PathVariable("auditId") Long auditId) {
         Optional<ModelAudit> auditOpt = modelAuditRepository.findById(auditId);
-        if (auditOpt.isEmpty()) {
+        if (auditOpt.isEmpty() || !id.equals(auditOpt.get().getModelId())) {
             return org.springframework.http.ResponseEntity.notFound().build();
         }
         ModelAudit audit = auditOpt.get();
@@ -207,7 +214,13 @@ public class ModelController {
         resp.put("summary", audit.getSummary());
         resp.put("criticalFindings", audit.getCriticalFindings());
         resp.put("totalFindings", audit.getTotalFindings());
-        return org.springframework.http.ResponseEntity.ok(resp);
+        resp.put("errorMessage", audit.getErrorMessage());
+        resp.put("startedAt", audit.getStartedAt());
+        resp.put("completedAt", audit.getCompletedAt());
+        return org.springframework.http.ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore().mustRevalidate())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(resp);
     }
 
     @PostMapping("/{id}/delete")

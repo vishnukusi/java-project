@@ -28,7 +28,16 @@ public class DatasetRepository {
         Dataset dataset = new Dataset();
         dataset.setId(rs.getLong("id"));
         dataset.setName(rs.getString("name"));
-        dataset.setFormat(DatasetFormat.valueOf(rs.getString("format")));
+        String rawFormat = rs.getString("format");
+        if (rawFormat == null || rawFormat.trim().isEmpty()) {
+            throw new IllegalStateException("Missing persisted dataset format for dataset id=" + dataset.getId());
+        }
+        try {
+            dataset.setFormat(DatasetFormat.valueOf(rawFormat.trim().toUpperCase(java.util.Locale.ROOT)));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(
+                    "Unsupported persisted dataset format '" + rawFormat + "' for dataset id=" + dataset.getId(), e);
+        }
         dataset.setPath(rs.getString("path"));
         dataset.setTotalImages(rs.getInt("total_images"));
         dataset.setTotalAnnotations(rs.getInt("total_annotations"));
@@ -47,6 +56,9 @@ public class DatasetRepository {
     };
 
     public Dataset save(Dataset dataset) {
+        if (dataset.getFormat() == null) {
+            throw new IllegalArgumentException("Dataset format must not be null");
+        }
         if (dataset.getId() == null) {
             String sql = "INSERT INTO datasets (name, format, path, total_images, total_annotations, total_classes, file_size_bytes, sha256_hash, created_at, updated_at) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))";

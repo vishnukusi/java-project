@@ -1,7 +1,52 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Drift Details</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drift Analysis Results · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('drift')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px">
+        <div>
+          <h1 th:text="${'Drift Analysis #' + audit.id}">Drift Analysis Results</h1>
+          <p th:text="${audit.referenceDatasetName + ' ➔ ' + audit.evaluationDatasetName + ' · Status: ' + audit.status}">Comparison metadata</p>
+        </div>
+        <a class="btn-primary" th:href="@{/scan}" style="text-decoration:none; padding:8px 16px; border-radius:6px; font-weight:500;">Run Another Scan</a>
+      </div>
+    </header>
+
+    <div class="kpi-grid">
+      <div class="card stat">
+        <div class="l">Severity</div>
+        <div class="v" style="font-size:20px; font-weight:700;" th:text="${audit.severity}">NONE</div>
+      </div>
+      <div class="card stat">
+        <div class="l">Drift Detected</div>
+        <div class="v" th:text="${audit.driftDetected ? 'YES' : 'NO'}">NO</div>
+      </div>
+      <div class="card stat">
+        <div class="l">Overall Drift Score</div>
+        <div class="v" th:text="${#numbers.formatDecimal(audit.overallDriftScore, 1, 3)}">0.000</div>
+      </div>
+      <div class="card stat">
+        <div class="l">Completed At</div>
+        <div class="v" style="font-size:14px; font-weight:500;" th:text="${audit.completedAt}">—</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3>Analysis Summary</h3>
+      <p th:text="${audit.summary != null ? audit.summary : 'No summary generated.'}">Summary</p>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
 /*[[${audit}]]*/ {}
 </script>

@@ -1,9 +1,52 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Datasets</title></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Datasets · SentinelCV</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" th:href="@{/static/css/tokens.css}" href="/static/css/tokens.css">
+  <link rel="stylesheet" th:href="@{/static/css/main.css}" href="/static/css/main.css">
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}" href="/static/css/dashboard.css">
+</head>
 <body>
+<div class="shell">
+  <aside th:replace="~{fragments/layout :: nav('overview')}"></aside>
+  <main class="content">
+    <header class="ph">
+      <h1>Datasets</h1>
+      <p>Registered computer-vision datasets.</p>
+    </header>
+    <div class="card">
+      <p th:if="${#lists.isEmpty(datasets)}" class="empty">No datasets registered yet. <a th:href="@{/scan}">Start a scan</a> to upload a dataset.</p>
+      <div th:unless="${#lists.isEmpty(datasets)}" class="tw">
+        <table class="tbl stack">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Format</th>
+              <th>Images</th>
+              <th>Annotations</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="d : ${datasets}">
+              <td data-l="ID" th:text="${d.id}">1</td>
+              <td data-l="Name"><a th:href="@{'/datasets/' + ${d.id}}" th:text="${d.name}">Sample</a></td>
+              <td data-l="Format" th:text="${d.format}">COCO</td>
+              <td data-l="Images" class="num" th:text="${d.totalImages}">0</td>
+              <td data-l="Annotations" class="num" th:text="${d.totalAnnotations}">0</td>
+              <td data-l="Created" th:text="${#temporals.format(d.createdAt, 'dd MMM yyyy HH:mm')}">Date</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
 <script id="__DATA__" type="application/json" th:inline="javascript">
-/*[[${datasets}]]*/ []
+{ "datasets": /*[[${datasets}]]*/ [], "error": /*[[${error}]]*/ null, "success": /*[[${success}]]*/ null }
 </script>
 </body>
 </html>
